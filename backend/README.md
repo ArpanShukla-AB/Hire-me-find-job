@@ -16,7 +16,7 @@ uvicorn app.main:app --reload --app-dir backend
 
 The health endpoint is `http://localhost:8000/api/v1/health`; interactive API docs are at `http://localhost:8000/docs`.
 
-The default mode is `demo`. Google OAuth can establish a signed session and store one encrypted, read-only Gmail connection. After connecting, the user can explicitly start a sync through `POST /api/v1/gmail/sync`. The first sync searches up to the configured maximum of 60 recent days; later requests use Gmail history. Only IDs, thread IDs, sender, subject, and received date are persisted for matching messages. This sync does not classify or create application records.
+The default mode is `demo`. Google OAuth can establish a signed session and store one encrypted, read-only Gmail connection. The dashboard starts a sync after the first successful connection and checks for updates on later visits. The first sync searches up to the configured maximum of 60 recent days; later requests use Gmail history. Matching message metadata is stored with extracted company, role, and status fields; message bodies and unrelated mail are not stored. Classification uses message headers and Gmail snippets and can leave a role or company unidentified when the message does not say clearly.
 
 ## Google OAuth connection
 
@@ -32,4 +32,4 @@ The connection stores the Google subject, verified email, granted scopes, and an
 
 ## User-triggered Gmail sync
 
-Apply migrations through `20261101_0002` before syncing. `GET /api/v1/gmail/sync/status` returns the user's imported message count and last sync time. `POST /api/v1/gmail/sync` starts the initial 60-day search or an incremental Gmail history sync. Google history cursors can expire; when that happens, the endpoint safely performs a new bounded 60-day search. Requesting this endpoint represents the user's explicit consent to import the matching email metadata. Bodies are not fetched or stored.
+Apply all migrations before syncing. `GET /api/v1/gmail/sync/status` returns the user's imported message count and last sync time. `POST /api/v1/gmail/sync` starts the initial 60-day search or an incremental Gmail history sync. `GET /api/v1/gmail/applications` returns deduplicated company/role records derived from relevant mail. Google history cursors can expire; when that happens, the endpoint safely performs a new bounded 60-day search. The Gmail connection consent covers this read-only import. Bodies are not fetched or stored; only the short Gmail snippet is read transiently to identify likely roles and status.

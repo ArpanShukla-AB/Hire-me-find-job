@@ -65,7 +65,7 @@ type ApplicationStatus =
   | "No response";
 
 type Application = {
-  id: number;
+  id: number | string;
   company: string;
   initials: string;
   color: string;
@@ -73,6 +73,7 @@ type Application = {
   date: string;
   status: ApplicationStatus;
   followUp?: string;
+  latestUpdate?: string;
 };
 
 type GmailStatus = {
@@ -83,6 +84,15 @@ type GmailStatus = {
 type GmailSyncStatus = {
   total_tracked: number;
   last_sync_at: string | null;
+};
+
+type GmailTrackedApplication = {
+  id: string;
+  company: string;
+  role: string;
+  status: ApplicationStatus;
+  applied_at: string;
+  latest_update: string;
 };
 
 const apiBaseUrl = (process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000").replace(/\/$/, "");
@@ -159,7 +169,6 @@ function StatusBadge({ status }: { status: ApplicationStatus }) {
 }
 
 export default function Home() {
-  const applications = starterApplications;
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("All statuses");
   const [dialog, setDialog] = useState<"gmail" | "notifications" | "assistant" | "settings" | null>(null);
@@ -172,7 +181,9 @@ export default function Home() {
   const [gmailNotice, setGmailNotice] = useState("");
   const [gmailTracked, setGmailTracked] = useState(0);
   const [gmailLastSync, setGmailLastSync] = useState<string | null>(null);
+  const [gmailApplications, setGmailApplications] = useState<Application[]>([]);
   const searchRef = useRef<HTMLInputElement>(null);
+  const autoSyncStarted = useRef(false);
 
   useEffect(() => {
     function focusSearch(event: KeyboardEvent) {
@@ -200,35 +211,41 @@ export default function Home() {
       window.history.replaceState(null, "", `${window.location.pathname}${window.location.hash}`);
     }
 
-    fetch(`${apiBaseUrl}/api/v1/auth/google/status`, { credentials: "include", cache: "no-store" })
-      .then(async (response) => {
+    void (async () => {
+      try {
+        const response = await fetch(`${apiBaseUrl}/api/v1/auth/google/status`, { credentials: "include", cache: "no-store" });
         if (!response.ok) throw new Error("Could not read Gmail connection status.");
-        return (await response.json()) as GmailStatus;
-      })
-      .then((status) => {
+        const status = await response.json() as GmailStatus;
         if (!active) return;
         setGmailEmail(status.connected ? status.email || null : null);
-        if (status.connected) {
-          fetch(`${apiBaseUrl}/api/v1/gmail/sync/status`, { credentials: "include", cache: "no-store" })
-            .then((response) => response.ok ? response.json() as Promise<GmailSyncStatus> : null)
-            .then((syncStatus) => {
-              if (active && syncStatus) {
-                setGmailTracked(syncStatus.total_tracked);
-                setGmailLastSync(syncStatus.last_sync_at);
-              }
-            })
-            .catch(() => undefined);
-        } else {
+        if (!status.connected) {
+          autoSyncStarted.current = false;
           setGmailTracked(0);
           setGmailLastSync(null);
+          setGmailApplications([]);
+          return;
         }
-      })
-      .catch(() => {
+        const syncResponse = await fetch(`${apiBaseUrl}/api/v1/gmail/sync/status`, { credentials: "include", cache: "no-store" });
+        const syncStatus = syncResponse.ok ? await syncResponse.json() as GmailSyncStatus : null;
+        if (syncStatus && active) {
+          setGmailTracked(syncStatus.total_tracked);
+          setGmailLastSync(syncStatus.last_sync_at);
+        }
+        if (!autoSyncStarted.current) {
+          autoSyncStarted.current = true;
+          await syncGmail();
+        }
+      } catch {
         if (active) setGmailEmail(null);
-      });
+      }
+    })();
 
     return () => { active = false; };
+  // This mount-only effect performs one automatic sync per dashboard visit.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const applications = gmailEmail ? gmailApplications : starterApplications;
 
   const filteredApplications = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
@@ -239,7 +256,33 @@ export default function Home() {
     });
   }, [applications, query, statusFilter]);
 
-  const totalApplications = 24;
+  const totalApplications = gmailEmail ? gmailApplications.length : 24;
+  const countStatus = (status: ApplicationStatus) => applications.filter((application) => application.status === status).length;
+  const dashboardStatusMix = gmailEmail
+    ? [
+        { name: "Applied", value: countStatus("Applied"), color: "#7a6cf0" },
+        { name: "Interview", value: countStatus("Interview"), color: "#39a981" },
+        { name: "Assessment", value: countStatus("Assessment"), color: "#e1a745" },
+        { name: "No response", value: countStatus("No response"), color: "#a6afc0" },
+        { name: "Other", value: countStatus("HR round") + countStatus("Offer received") + countStatus("Rejected"), color: "#e47c69" },
+      ].filter((item) => item.value > 0)
+    : statusMix;
+
+  async function loadTrackedApplications() {
+    const response = await fetch(`${apiBaseUrl}/api/v1/gmail/applications`, { credentials: "include", cache: "no-store" });
+    if (!response.ok) return;
+    const result = await response.json() as { applications: GmailTrackedApplication[] };
+    setGmailApplications(result.applications.map((item) => ({
+      id: item.id,
+      company: item.company,
+      initials: item.company.slice(0, 1).toUpperCase(),
+      color: "#6e5de7",
+      role: item.role,
+      date: new Date(item.applied_at).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }),
+      status: item.status,
+      latestUpdate: item.latest_update,
+    })));
+  }
 
   async function connectGmail() {
     setGmailBusy(true);
@@ -273,6 +316,7 @@ export default function Home() {
       setGmailEmail(null);
       setGmailTracked(0);
       setGmailLastSync(null);
+      setGmailApplications([]);
     } catch (error) {
       setGmailError(error instanceof Error ? error.message : "Could not disconnect Gmail.");
     } finally {
@@ -296,6 +340,7 @@ export default function Home() {
       setGmailNotice(result.initial_sync
         ? `First sync complete. ${result.imported || 0} relevant messages imported from the last 60 days.`
         : `Sync complete. ${result.imported || 0} new relevant messages imported.`);
+      await loadTrackedApplications();
     } catch (error) {
       setGmailError(error instanceof TypeError
         ? `Could not reach the JobPilot API at ${apiBaseUrl}. Start the backend and try again.`
@@ -310,9 +355,13 @@ export default function Home() {
     const question = assistantQuestion.trim().toLowerCase();
     if (!question) return;
     if (question.includes("interview")) {
-      setAssistantAnswer("Your demo workspace has 4 interviews in progress. Sample records are shown for preview only.");
+      setAssistantAnswer(gmailEmail
+        ? `I found ${countStatus("Interview") + countStatus("HR round")} interview-stage roles in your Gmail tracking.`
+        : "Your demo workspace has 4 interviews in progress. Sample records are shown for preview only.");
     } else if (question.includes("how many") || question.includes("total") || question.includes("application")) {
-      setAssistantAnswer(`Your demo workspace has ${totalApplications} sample applications. Gmail messages and live job-search data are not loaded.`);
+      setAssistantAnswer(gmailEmail
+        ? `I found ${totalApplications} likely job application records in the Gmail messages scanned so far.`
+        : `Your demo workspace has ${totalApplications} sample applications. Gmail messages and live job-search data are not loaded.`);
     } else {
       setAssistantAnswer("The career assistant is in demo mode. Connect the backend and configure an AI provider to get answers grounded in your own application records.");
     }
@@ -337,7 +386,7 @@ export default function Home() {
             <a key={label} href={href} className={`nav-link ${index === 0 ? "active" : ""}`} onClick={() => setMobileNavOpen(false)}>
               <Icon size={17} strokeWidth={1.85} />
               <span>{label}</span>
-              {label === "Applications" && <span className="nav-count">24</span>}
+              {label === "Applications" && <span className="nav-count">{gmailEmail ? gmailApplications.length : 24}</span>}
             </a>
           ))}
           <button className="nav-link assistant-link" onClick={() => { setDialog("assistant"); setMobileNavOpen(false); }}>
@@ -375,7 +424,7 @@ export default function Home() {
         </header>
 
         <div className="content-wrap">
-          <div className="demo-banner"><span className="demo-indicator" /> <strong>Demo workspace</strong><span>Sample applications remain separate. Gmail sync stores relevant message metadata; automatic application detection is in progress.</span><button onClick={() => setDialog("gmail")}>{gmailEmail ? "Gmail connected" : "Connect Gmail"} <ArrowUpRight size={13} /></button></div>
+          <div className="demo-banner"><span className="demo-indicator" /> <strong>{gmailEmail ? "Gmail tracking" : "Demo workspace"}</strong><span>{gmailEmail ? `${gmailApplications.length} roles detected from Gmail messages${gmailLastSync ? ` · last synced ${new Date(gmailLastSync).toLocaleString()}` : " · syncing your recent mail"}.` : "Connect Gmail to scan the last 60 days for application updates and detected roles."}</span><button onClick={() => setDialog("gmail")}>{gmailEmail ? "Gmail connected" : "Connect Gmail"} <ArrowUpRight size={13} /></button></div>
 
           <section className="welcome-row">
             <div>
@@ -384,7 +433,7 @@ export default function Home() {
               <p className="welcome-subtitle">Keep your momentum going. Here&apos;s your progress this week.</p>
             </div>
             <div className="welcome-actions">
-              <span className="sync-label"><span className="sync-dot" /> Demo data · not synced</span>
+              <span className="sync-label"><span className="sync-dot" /> {gmailEmail ? gmailLastSync ? `Gmail synced · ${new Date(gmailLastSync).toLocaleDateString()}` : "Gmail syncing…" : "Demo data · not synced"}</span>
               <Button className="primary-action" onClick={() => setDialog("gmail")}><Mail size={15} /> {gmailEmail ? "Gmail connected" : "Connect inbox"}</Button>
             </div>
           </section>
@@ -396,15 +445,15 @@ export default function Home() {
             </Card>
             <Card className="stat-card">
               <CardHeader className="stat-heading"><CardTitle>Interviews</CardTitle><span className="stat-icon green"><MessageSquareText size={17} /></span></CardHeader>
-              <CardContent className="stat-content"><div className="stat-value">04</div><div className="stat-meta positive"><TrendingUp size={14} /><strong>2</strong><span>new this week</span></div></CardContent>
+              <CardContent className="stat-content"><div className="stat-value">{String(gmailEmail ? countStatus("Interview") + countStatus("HR round") : 4).padStart(2, "0")}</div><div className="stat-meta positive"><TrendingUp size={14} /><span>{gmailEmail ? "from Gmail" : "2 new this week"}</span></div></CardContent>
             </Card>
             <Card className="stat-card">
               <CardHeader className="stat-heading"><CardTitle>Assessments</CardTitle><span className="stat-icon amber"><FileText size={17} /></span></CardHeader>
-              <CardContent className="stat-content"><div className="stat-value">03</div><div className="stat-meta neutral"><Clock3 size={14} /><span>1 due this week</span></div></CardContent>
+              <CardContent className="stat-content"><div className="stat-value">{String(gmailEmail ? countStatus("Assessment") : 3).padStart(2, "0")}</div><div className="stat-meta neutral"><Clock3 size={14} /><span>{gmailEmail ? "from Gmail" : "1 due this week"}</span></div></CardContent>
             </Card>
             <Card className="stat-card">
               <CardHeader className="stat-heading"><CardTitle>Awaiting response</CardTitle><span className="stat-icon blue"><Mail size={17} /></span></CardHeader>
-              <CardContent className="stat-content"><div className="stat-value">09</div><div className="stat-meta due"><ArrowDownRight size={14} /><strong>3</strong><span>need follow-up</span></div></CardContent>
+              <CardContent className="stat-content"><div className="stat-value">{String(gmailEmail ? countStatus("Applied") + countStatus("No response") : 9).padStart(2, "0")}</div><div className="stat-meta due"><ArrowDownRight size={14} /><span>{gmailEmail ? "awaiting an update" : "3 need follow-up"}</span></div></CardContent>
             </Card>
           </section>
 
@@ -440,8 +489,8 @@ export default function Home() {
                 <div className="donut-wrap">
                   <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
-                      <Pie data={statusMix} dataKey="value" nameKey="name" innerRadius={52} outerRadius={70} paddingAngle={4} stroke="none">
-                        {statusMix.map((entry) => <Cell key={entry.name} fill={entry.color} />)}
+                    <Pie data={dashboardStatusMix} dataKey="value" nameKey="name" innerRadius={52} outerRadius={70} paddingAngle={4} stroke="none">
+                      {dashboardStatusMix.map((entry) => <Cell key={entry.name} fill={entry.color} />)}
                       </Pie>
                       <Tooltip contentStyle={{ border: "1px solid #ebeaf2", borderRadius: 10, fontSize: 12 }} />
                     </PieChart>
@@ -449,7 +498,7 @@ export default function Home() {
                   <div className="donut-center"><strong>{totalApplications}</strong><span>total</span></div>
                 </div>
                 <div className="status-legend">
-                  {statusMix.map((item) => <div key={item.name}><span><i style={{ backgroundColor: item.color }} />{item.name}</span><strong>{item.value}</strong></div>)}
+                  {dashboardStatusMix.map((item) => <div key={item.name}><span><i style={{ backgroundColor: item.color }} />{item.name}</span><strong>{item.value}</strong></div>)}
                 </div>
               </CardContent>
             </Card>
@@ -473,9 +522,9 @@ export default function Home() {
                       <span><StatusBadge status={application.status} /></span>
                       <span className={`follow-date ${application.followUp ? "has-follow-up" : ""}`}>{application.followUp ? <><CalendarDays size={13} />{application.followUp}</> : <span className="no-follow-up">—</span>}</span>
                     </div>
-                  )) : <div className="empty-results"><Search size={18} /><strong>No matching applications</strong><span>Try another search or status filter.</span></div>}
+                  )) : <div className="empty-results"><Search size={18} /><strong>{gmailEmail && !gmailApplications.length ? "No job roles found in recent email" : "No matching applications"}</strong><span>{gmailEmail && !gmailApplications.length ? "Your connected inbox was scanned. Try Sync Gmail again after application emails arrive." : "Try another search or status filter."}</span></div>}
                 </div>
-                <div className="table-foot"><span>Showing {filteredApplications.length} recent {filteredApplications.length === 1 ? "application" : "applications"} <span className="table-demo">· demo records</span></span><a href="#applications">View applications <ArrowRight size={14} /></a></div>
+                <div className="table-foot"><span>Showing {filteredApplications.length} recent {filteredApplications.length === 1 ? "application" : "applications"} {!gmailEmail && <span className="table-demo">· demo records</span>}</span><a href="#applications">View applications <ArrowRight size={14} /></a></div>
               </CardContent>
             </Card>
 
@@ -493,23 +542,23 @@ export default function Home() {
               </Card>
 
               <Card className="panel email-panel" id="email-activity">
-                <CardHeader className="panel-heading compact-heading"><div><CardTitle>Recent email activity</CardTitle><p>Demo email activity · not synced</p></div><button className="icon-subtle" aria-label="Connect email" onClick={() => setDialog("gmail")}><Mail size={16} /></button></CardHeader>
+                <CardHeader className="panel-heading compact-heading"><div><CardTitle>Recent email activity</CardTitle><p>{gmailEmail ? `${gmailTracked} relevant messages tracked` : "Demo email activity · not synced"}</p></div><button className="icon-subtle" aria-label="Connect email" onClick={() => setDialog("gmail")}><Mail size={16} /></button></CardHeader>
                 <CardContent className="email-list">
-                  {recentEmails.map((email) => <div className="email-row" key={email.subject}><span className="email-mark" style={{ backgroundColor: email.color }}>{email.company.slice(0, 1)}</span><div className="email-copy"><div><strong>{email.company}</strong><time>{email.time}</time></div><p>{email.subject}</p><Badge className="email-kind">{email.kind}</Badge></div></div>)}
+                  {(gmailEmail ? gmailApplications.slice(0, 3).map((application) => ({ company: application.company, subject: application.latestUpdate || application.role, time: application.date, kind: application.status, color: application.color })) : recentEmails).map((email) => <div className="email-row" key={email.subject}><span className="email-mark" style={{ backgroundColor: email.color }}>{email.company.slice(0, 1)}</span><div className="email-copy"><div><strong>{email.company}</strong><time>{email.time}</time></div><p>{email.subject}</p><Badge className="email-kind">{email.kind}</Badge></div></div>)}
                   <button className="connect-email-link" onClick={() => setDialog("gmail")}>{gmailEmail ? `Connected as ${gmailEmail}` : "Connect Gmail with Google OAuth"} <ArrowRight size={14} /></button>
                 </CardContent>
               </Card>
             </div>
           </section>
 
-          <footer className="page-footer"><span>Made for the next step in your career.</span><span><span className="footer-dot" /> Demo mode · {gmailEmail ? "Gmail connected; demo records shown" : "No account connected"}</span></footer>
+          <footer className="page-footer"><span>Made for the next step in your career.</span><span><span className="footer-dot" /> {gmailEmail ? "Gmail connected · detected roles shown" : "Demo mode · no account connected"}</span></footer>
         </div>
       </main>
 
       <Dialog open={dialog === "gmail"} onOpenChange={(open) => { if (!open) setDialog(null); }}>
         <DialogContent className="app-dialog simple-dialog">
           <DialogHeader><div className="dialog-hero-icon"><Mail size={20} /></div><DialogTitle>{gmailEmail ? "Gmail connected" : "Connect your Gmail"}</DialogTitle><DialogDescription>{gmailEmail ? `Connected as ${gmailEmail}.` : "Continue to Google to choose an account and approve read-only Gmail access. JobPilot never asks for your Gmail password."}</DialogDescription></DialogHeader>
-          <div className="permission-note"><strong>Read-only access to Gmail</strong><p>When you choose Sync Gmail, JobPilot searches up to the last 60 days for job-search messages. It stores only message IDs, thread IDs, sender, subject, and date; message bodies and unrelated messages are not saved.</p><p>Later syncs use Google&apos;s change history. Draft creation requires separate permission, and JobPilot will not send messages automatically.</p></div>
+          <div className="permission-note"><strong>Read-only access to Gmail</strong><p>After you connect, JobPilot scans up to the last 60 days for job-search messages and checks for updates when you reopen the dashboard. It uses message headers and short Gmail snippets to infer company, role, and status, then stores those fields with message IDs, sender, subject, and date. Message bodies and unrelated mail are not saved.</p><p>Role detection may need correction if an email is unclear. Draft creation requires separate permission, and JobPilot will not send messages automatically.</p></div>
           {gmailEmail && <p className="dialog-description">{gmailTracked} relevant messages tracked{gmailLastSync ? ` · last synced ${new Date(gmailLastSync).toLocaleString()}` : " · not synced yet"}.</p>}
           {gmailError && <div className="integration-error" role="alert">{gmailError}</div>}
           {gmailNotice && <div className="integration-success" role="status">{gmailNotice}</div>}
@@ -538,7 +587,7 @@ export default function Home() {
 
       <Dialog open={dialog === "assistant"} onOpenChange={(open) => { if (!open) setDialog(null); }}>
         <DialogContent className="app-dialog assistant-dialog">
-          <DialogHeader><div className="dialog-hero-icon assistant-icon"><Sparkles size={20} /></div><DialogTitle>Career assistant</DialogTitle><DialogDescription>Ask about this sample workspace. Personal records and AI services are not connected.</DialogDescription></DialogHeader>
+          <DialogHeader><div className="dialog-hero-icon assistant-icon"><Sparkles size={20} /></div><DialogTitle>Career assistant</DialogTitle><DialogDescription>{gmailEmail ? "Ask for a count from the roles detected in your connected Gmail." : "Ask about this sample workspace. Personal records and AI services are not connected."}</DialogDescription></DialogHeader>
           <div className="assistant-suggestion"><Sparkles size={14} /><span>Try: “How many applications do I have?”</span></div>
           {assistantAnswer && <div className="assistant-answer"><span className="assistant-mini-mark"><Sparkles size={13} /></span><p>{assistantAnswer}</p></div>}
           <form className="assistant-form" onSubmit={askAssistant}><Input value={assistantQuestion} onChange={(event) => setAssistantQuestion(event.target.value)} placeholder="Ask about your job search..." aria-label="Ask the career assistant" /><Button type="submit" className="primary-action" size="icon" aria-label="Send question"><Send size={16} /></Button></form>

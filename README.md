@@ -4,9 +4,9 @@ JobPilot AI is a single workspace for automatically tracking a user's job search
 
 ## Current status
 
-The project includes a responsive Next.js demo dashboard, a Google OAuth flow for read-only Gmail access, and an explicit Gmail sync action. OAuth state is validated, refresh tokens are encrypted at rest, and the first sync searches at most the preceding 60 days for relevant messages. Sync stores message and thread IDs plus sender, subject, and date metadata; it does not store message bodies or unrelated messages. Subsequent manual syncs use Gmail history. Application records remain clearly labeled demo data while classification and persistent application tracking are developed.
+The project includes a responsive Next.js dashboard and a Google OAuth flow for read-only Gmail access. After connection, the dashboard starts an initial scan of up to 60 days of relevant mail and uses Gmail history for updates on later dashboard visits. It classifies likely application messages from their headers and Gmail snippets, then persists only message metadata and extracted company, role, and status fields. It does not persist message bodies or unrelated messages. Extracted roles are heuristic and can be incomplete when an email does not identify the company or position clearly.
 
-The intended normal workflow needs no manual application feeding: after the user connects Gmail through Google OAuth, JobPilot will import up to the last 60 days of relevant mail and keep application records updated. The product must never ask for or store a Gmail password. AI follow-up drafts require the user's permission and remain unsent for review.
+The intended normal workflow needs no manual application feeding: after the user connects Gmail through Google OAuth, JobPilot imports up to the last 60 days of relevant mail and checks Gmail history when the dashboard opens. A scheduled background sync is still on the roadmap. The product must never ask for or store a Gmail password. AI follow-up drafts require the user's permission and remain unsent for review.
 
 ### Roadmap
 
@@ -14,11 +14,12 @@ The intended normal workflow needs no manual application feeding: after the user
 - [x] Build the responsive dashboard shell and clearly labeled sample data.
 - [x] Add working in-session application creation, search, status filtering, and demo assistant responses.
 - [x] Establish the FastAPI configuration and health endpoint.
-- [ ] Add database models, Alembic migrations, and user-scoped application APIs.
+- [x] Add Gmail database models, Alembic migrations, and user-scoped tracked application APIs.
 - [x] Establish Google OAuth sign-in, read-only Gmail connection, encrypted token storage, and disconnect controls.
-- [x] Add a user-triggered 60-day first Gmail sync and incremental history sync, storing only relevant message metadata.
-- [ ] Run incremental sync in the background and classify relevant messages into persistent application records.
-- [ ] Automatically classify relevant mail, deduplicate applications, and support correction/exclusion without manual feeding.
+- [x] Add an automatic 60-day first Gmail sync and incremental history sync, storing only relevant message metadata.
+- [ ] Run incremental sync in a background worker.
+- [x] Classify likely application messages into deduplicated, persistent company/role/status records without manual feeding.
+- [ ] Add user correction and exclusion controls for extracted records.
 - [ ] Add permission-gated AI drafts for user-selected conversations; save drafts only and leave sending to the user.
 - [ ] Add supported, user-authorized job-portal status connectors with source and last-checked details.
 - [ ] Add opt-in WhatsApp tracking and reminders through signed n8n workflows.

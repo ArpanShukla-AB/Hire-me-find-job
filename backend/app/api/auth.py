@@ -30,12 +30,13 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/auth/google", tags=["Google OAuth"])
 
 OAUTH_STATE_COOKIE = "jobpilot_google_oauth_state"
+OAUTH_VERIFIER_COOKIE = "jobpilot_google_oauth_verifier"
 SESSION_COOKIE = "jobpilot_session"
 OAUTH_STATE_MAX_AGE = 600
 SESSION_MAX_AGE = 60 * 60 * 24 * 14
 GOOGLE_SCOPES = [
     "openid",
-    "email",
+    "https://www.googleapis.com/auth/userinfo.email",
     "https://www.googleapis.com/auth/gmail.readonly",
 ]
 
@@ -78,7 +79,12 @@ def _flow(state: Optional[str] = None) -> Flow:
             "redirect_uris": [settings.google_redirect_uri],
         }
     }
-    flow = Flow.from_client_config(client_config, scopes=GOOGLE_SCOPES, state=state)
+    flow = Flow.from_client_config(
+        client_config,
+        scopes=GOOGLE_SCOPES,
+        state=state,
+        autogenerate_code_verifier=True,
+    )
     flow.redirect_uri = settings.google_redirect_uri
     return flow
 
@@ -88,13 +94,14 @@ def _secure_cookie() -> bool:
 
 
 def _clear_state_cookie(response: Response) -> None:
-    response.delete_cookie(
-        OAUTH_STATE_COOKIE,
-        path=f"{settings.api_prefix}/auth/google/callback",
-        secure=_secure_cookie(),
-        httponly=True,
-        samesite="lax",
-    )
+    for cookie_name in (OAUTH_STATE_COOKIE, OAUTH_VERIFIER_COOKIE):
+        response.delete_cookie(
+            cookie_name,
+            path=f"{settings.api_prefix}/auth/google/callback",
+            secure=_secure_cookie(),
+            httponly=True,
+            samesite="lax",
+        )
 
 
 def _frontend_result(result: str) -> Response:
@@ -141,6 +148,16 @@ def start_google_oauth(
         httponly=True,
         samesite="lax",
     )
+    if flow.code_verifier:
+        response.set_cookie(
+            OAUTH_VERIFIER_COOKIE,
+            flow.code_verifier,
+            max_age=OAUTH_STATE_MAX_AGE,
+            path=f"{settings.api_prefix}/auth/google/callback",
+            secure=_secure_cookie(),
+            httponly=True,
+            samesite="lax",
+        )
     response.headers["Cache-Control"] = "no-store"
     return ConnectStartResponse(authorization_url=authorization_url)
 
@@ -154,15 +171,17 @@ def google_oauth_callback(
     db: Session = Depends(get_db),
 ) -> Response:
     saved_state = request.cookies.get(OAUTH_STATE_COOKIE)
+    saved_verifier = request.cookies.get(OAUTH_VERIFIER_COOKIE)
     if not state or not saved_state or not hmac.compare_digest(state, saved_state):
         return _frontend_result("state_error")
     if error:
         return _frontend_result("denied")
-    if not code:
+    if not code or not saved_verifier:
         return _frontend_result("connect_error")
 
     try:
         flow = _flow(state)
+        flow.code_verifier = saved_verifier
         flow.fetch_token(code=code)
         credential = flow.credentials
         if not credential.id_token:

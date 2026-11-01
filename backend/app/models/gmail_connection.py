@@ -15,6 +15,8 @@ class GmailConnection(Base):
     email: Mapped[str] = mapped_column(String(320), nullable=False, index=True)
     encrypted_refresh_token: Mapped[str] = mapped_column(Text, nullable=False)
     scopes: Mapped[str] = mapped_column(Text, nullable=False)
+    history_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    last_sync_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
     )

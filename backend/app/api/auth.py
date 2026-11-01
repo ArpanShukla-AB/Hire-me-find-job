@@ -10,13 +10,14 @@ from google.auth.transport.requests import Request as GoogleRequest
 from google.oauth2 import id_token
 from google_auth_oauthlib.flow import Flow
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.db import get_db
 from app.models.gmail_connection import GmailConnection
+from app.models.gmail_message import GmailMessage
 from app.security import (
     create_session_token,
     decrypt_refresh_token,
@@ -255,6 +256,7 @@ def disconnect_gmail(
                 revoke_response.raise_for_status()
             except (httpx.HTTPError, ValueError):
                 logger.warning("Google token revocation could not be confirmed during disconnect")
+            db.execute(delete(GmailMessage).where(GmailMessage.google_subject == google_subject))
             db.delete(connection)
             db.commit()
     response.delete_cookie(

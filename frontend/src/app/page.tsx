@@ -80,6 +80,11 @@ type GmailStatus = {
   email?: string | null;
 };
 
+type GmailSyncStatus = {
+  total_tracked: number;
+  last_sync_at: string | null;
+};
+
 const apiBaseUrl = (process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000").replace(/\/$/, "");
 
 const gmailCallbackMessages: Record<string, string> = {
@@ -164,6 +169,9 @@ export default function Home() {
   const [gmailEmail, setGmailEmail] = useState<string | null>(null);
   const [gmailBusy, setGmailBusy] = useState(false);
   const [gmailError, setGmailError] = useState("");
+  const [gmailNotice, setGmailNotice] = useState("");
+  const [gmailTracked, setGmailTracked] = useState(0);
+  const [gmailLastSync, setGmailLastSync] = useState<string | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -198,7 +206,22 @@ export default function Home() {
         return (await response.json()) as GmailStatus;
       })
       .then((status) => {
-        if (active) setGmailEmail(status.connected ? status.email || null : null);
+        if (!active) return;
+        setGmailEmail(status.connected ? status.email || null : null);
+        if (status.connected) {
+          fetch(`${apiBaseUrl}/api/v1/gmail/sync/status`, { credentials: "include", cache: "no-store" })
+            .then((response) => response.ok ? response.json() as Promise<GmailSyncStatus> : null)
+            .then((syncStatus) => {
+              if (active && syncStatus) {
+                setGmailTracked(syncStatus.total_tracked);
+                setGmailLastSync(syncStatus.last_sync_at);
+              }
+            })
+            .catch(() => undefined);
+        } else {
+          setGmailTracked(0);
+          setGmailLastSync(null);
+        }
       })
       .catch(() => {
         if (active) setGmailEmail(null);
@@ -248,8 +271,35 @@ export default function Home() {
       });
       if (!response.ok) throw new Error("JobPilot could not disconnect Gmail. Please try again.");
       setGmailEmail(null);
+      setGmailTracked(0);
+      setGmailLastSync(null);
     } catch (error) {
       setGmailError(error instanceof Error ? error.message : "Could not disconnect Gmail.");
+    } finally {
+      setGmailBusy(false);
+    }
+  }
+
+  async function syncGmail() {
+    setGmailBusy(true);
+    setGmailError("");
+    setGmailNotice("");
+    try {
+      const response = await fetch(`${apiBaseUrl}/api/v1/gmail/sync`, {
+        method: "POST",
+        credentials: "include",
+      });
+      const result = await response.json() as GmailSyncStatus & { imported?: number; detail?: string; initial_sync?: boolean };
+      if (!response.ok) throw new Error(result.detail || "Gmail sync could not complete.");
+      setGmailTracked(result.total_tracked);
+      setGmailLastSync(result.last_sync_at);
+      setGmailNotice(result.initial_sync
+        ? `First sync complete. ${result.imported || 0} relevant messages imported from the last 60 days.`
+        : `Sync complete. ${result.imported || 0} new relevant messages imported.`);
+    } catch (error) {
+      setGmailError(error instanceof TypeError
+        ? `Could not reach the JobPilot API at ${apiBaseUrl}. Start the backend and try again.`
+        : error instanceof Error ? error.message : "Could not sync Gmail.");
     } finally {
       setGmailBusy(false);
     }
@@ -325,7 +375,7 @@ export default function Home() {
         </header>
 
         <div className="content-wrap">
-          <div className="demo-banner"><span className="demo-indicator" /> <strong>Demo workspace</strong><span>Sample data is shown. Gmail import and application tracking are not enabled yet.</span><button onClick={() => setDialog("gmail")}>{gmailEmail ? "Gmail connected" : "Connect Gmail"} <ArrowUpRight size={13} /></button></div>
+          <div className="demo-banner"><span className="demo-indicator" /> <strong>Demo workspace</strong><span>Sample applications remain separate. Gmail sync stores relevant message metadata; automatic application detection is in progress.</span><button onClick={() => setDialog("gmail")}>{gmailEmail ? "Gmail connected" : "Connect Gmail"} <ArrowUpRight size={13} /></button></div>
 
           <section className="welcome-row">
             <div>
@@ -459,11 +509,14 @@ export default function Home() {
       <Dialog open={dialog === "gmail"} onOpenChange={(open) => { if (!open) setDialog(null); }}>
         <DialogContent className="app-dialog simple-dialog">
           <DialogHeader><div className="dialog-hero-icon"><Mail size={20} /></div><DialogTitle>{gmailEmail ? "Gmail connected" : "Connect your Gmail"}</DialogTitle><DialogDescription>{gmailEmail ? `Connected as ${gmailEmail}.` : "Continue to Google to choose an account and approve read-only Gmail access. JobPilot never asks for your Gmail password."}</DialogDescription></DialogHeader>
-          <div className="permission-note"><strong>Read-only access to Gmail</strong><p>This connection authorizes JobPilot to read messages. Gmail import and job application tracking are not enabled yet.</p><p>Draft creation will require separate permission. JobPilot will not send messages automatically.</p></div>
+          <div className="permission-note"><strong>Read-only access to Gmail</strong><p>When you choose Sync Gmail, JobPilot searches up to the last 60 days for job-search messages. It stores only message IDs, thread IDs, sender, subject, and date; message bodies and unrelated messages are not saved.</p><p>Later syncs use Google&apos;s change history. Draft creation requires separate permission, and JobPilot will not send messages automatically.</p></div>
+          {gmailEmail && <p className="dialog-description">{gmailTracked} relevant messages tracked{gmailLastSync ? ` · last synced ${new Date(gmailLastSync).toLocaleString()}` : " · not synced yet"}.</p>}
           {gmailError && <div className="integration-error" role="alert">{gmailError}</div>}
+          {gmailNotice && <div className="integration-success" role="status">{gmailNotice}</div>}
           <DialogFooter>
             {gmailEmail && <Button variant="outline" disabled={gmailBusy} onClick={disconnectGmail}>{gmailBusy ? "Disconnecting…" : "Disconnect Gmail"}</Button>}
             <Button variant="outline" disabled={gmailBusy} onClick={() => setDialog(null)}>Close</Button>
+            {gmailEmail && <Button className="primary-action" disabled={gmailBusy} onClick={syncGmail}>{gmailBusy ? "Syncing…" : "Sync Gmail"}</Button>}
             {!gmailEmail && <Button className="primary-action" disabled={gmailBusy} onClick={connectGmail}>{gmailBusy ? "Connecting…" : "Continue with Google"}</Button>}
           </DialogFooter>
         </DialogContent>

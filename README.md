@@ -4,7 +4,7 @@ JobPilot AI is a single workspace for automatically tracking a user's job search
 
 ## Current status
 
-The project includes a responsive Next.js demo dashboard and a Google OAuth flow for read-only Gmail access. OAuth state is validated, refresh tokens are encrypted at rest, and the UI supports connection status and disconnect. Application records remain clearly labeled demo data: Gmail import, AI, portal connectors, WhatsApp/n8n, billing, and persistent application tracking are not implemented yet.
+The project includes a responsive Next.js demo dashboard, a Google OAuth flow for read-only Gmail access, and an explicit Gmail sync action. OAuth state is validated, refresh tokens are encrypted at rest, and the first sync searches at most the preceding 60 days for relevant messages. Sync stores message and thread IDs plus sender, subject, and date metadata; it does not store message bodies or unrelated messages. Subsequent manual syncs use Gmail history. Application records remain clearly labeled demo data while classification and persistent application tracking are developed.
 
 The intended normal workflow needs no manual application feeding: after the user connects Gmail through Google OAuth, JobPilot will import up to the last 60 days of relevant mail and keep application records updated. The product must never ask for or store a Gmail password. AI follow-up drafts require the user's permission and remain unsent for review.
 
@@ -16,7 +16,8 @@ The intended normal workflow needs no manual application feeding: after the user
 - [x] Establish the FastAPI configuration and health endpoint.
 - [ ] Add database models, Alembic migrations, and user-scoped application APIs.
 - [x] Establish Google OAuth sign-in, read-only Gmail connection, encrypted token storage, and disconnect controls.
-- [ ] Add a consented 60-day first sync and incremental background sync.
+- [x] Add a user-triggered 60-day first Gmail sync and incremental history sync, storing only relevant message metadata.
+- [ ] Run incremental sync in the background and classify relevant messages into persistent application records.
 - [ ] Automatically classify relevant mail, deduplicate applications, and support correction/exclusion without manual feeding.
 - [ ] Add permission-gated AI drafts for user-selected conversations; save drafts only and leave sending to the user.
 - [ ] Add supported, user-authorized job-portal status connectors with source and last-checked details.

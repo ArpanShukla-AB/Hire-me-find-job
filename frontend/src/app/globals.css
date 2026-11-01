@@ -278,6 +278,7 @@ h1 span { color: #7769dc; }
 .permission-note strong { color: #4e5062; font-size: 10px; }
 .permission-note p { margin: 6px 0 0; color: #838899; font-size: 10px; line-height: 1.6; }
 .integration-error { border: 1px solid #f2d1ce; border-radius: 8px; background: #fff6f5; padding: 10px 12px; color: #a54239; font-size: 10px; line-height: 1.55; }
+.integration-success { border: 1px solid #cfe8dc; border-radius: 8px; background: #f3fbf7; padding: 10px 12px; color: #28704e; font-size: 10px; line-height: 1.55; }
 .simple-dialog [data-slot="dialog-footer"] { justify-content: flex-end; border: 0; background: transparent; padding: 0; }
 .simple-dialog [data-slot="dialog-footer"] button { height: 33px; font-size: 10px; }
 .assistant-dialog { gap: 13px; }

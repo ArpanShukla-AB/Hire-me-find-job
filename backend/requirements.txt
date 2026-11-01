@@ -13,3 +13,5 @@ google-auth-oauthlib>=1.2,<2.0
 google-auth-httplib2>=0.2,<1.0
 cryptography>=43,<47
 openai>=1.55,<3.0
+python-multipart>=0.0.18,<1.0
+pypdf>=5.0,<7.0

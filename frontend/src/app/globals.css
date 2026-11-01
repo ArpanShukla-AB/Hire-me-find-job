@@ -258,9 +258,16 @@ h1 span { color: #7769dc; }
 .email-mark { display: grid; width: 24px; height: 24px; flex: 0 0 auto; place-items: center; border-radius: 7px; color: #fff; font-size: 9px; font-weight: 700; }
 .email-copy { min-width: 0; flex: 1; }
 .email-copy > div { display: flex; align-items: center; justify-content: space-between; gap: 5px; }
+.email-copy .email-copy-heading { display: flex; align-items: center; justify-content: space-between; gap: 5px; }
 .email-copy strong { color: #44465a; font-size: 9px; font-weight: 650; }
 .email-copy time { color: #a9adba; font-size: 8px; white-space: nowrap; }
 .email-copy p { overflow: hidden; margin: 4px 0 6px; color: #777c8d; font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
+.email-subject { display: block; overflow: hidden; margin: 4px 0 6px; color: #777c8d; font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
+.email-row-action { align-items: center; }
+.email-open-row { display: flex; min-width: 0; flex: 1; align-items: flex-start; gap: 8px; border: 0; background: transparent; padding: 0; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.email-open-row:hover { background: #faf9ff; }
+.email-follow-up { height: 25px; flex: 0 0 auto; border-color: #e8e4ff; padding: 0 7px; color: #6d5ed0; font-size: 8px; }
+.email-empty { margin: 8px 0; color: #85899a; font-size: 9px; line-height: 1.5; }
 .email-kind { border: 1px solid #e9e7f7; border-radius: 10px; background: #f8f7ff; padding: 2px 6px; color: #8074c8; font-size: 7px; font-weight: 550; }
 .connect-email-link { display: flex; align-items: center; gap: 5px; margin-top: 10px; border: 0; background: transparent; padding: 0; color: #6d5ed0; font-size: 9px; font-weight: 600; }
 .page-footer { display: flex; align-items: center; justify-content: space-between; margin-top: 21px; color: #a7aab6; font-size: 9px; }
@@ -272,6 +279,22 @@ h1 span { color: #7769dc; }
 .app-dialog [data-slot="dialog-title"] { color: #2e2e45; font-size: 17px; font-weight: 650; letter-spacing: -.3px; }
 .app-dialog [data-slot="dialog-description"] { color: #838899; font-size: 11px; line-height: 1.6; }
 .simple-dialog { max-width: 390px; }
+.mail-dialog { max-width: 680px; }
+.follow-up-dialog { max-width: 520px; }
+.follow-up-form { display: grid; gap: 9px; }
+.follow-up-form > label { color: #55576a; font-size: 10px; font-weight: 600; }
+.follow-up-form textarea { min-height: 105px; resize: vertical; border: 1px solid #e5e5ed; border-radius: 8px; background: #fff; padding: 10px; color: #4c4f60; font-family: inherit; font-size: 11px; line-height: 1.55; outline: none; }
+.follow-up-form textarea:focus { border-color: #a99ef0; box-shadow: 0 0 0 3px #7466db16; }
+.follow-up-form input[type="file"] { width: 100%; border: 1px dashed #dcd9e9; border-radius: 8px; background: #fbfaff; padding: 9px; color: #777b8c; font-size: 9px; }
+.resume-picked { display: flex; justify-content: space-between; color: #6f7282; font-size: 9px; }
+.resume-picked button { border: 0; background: transparent; color: #6d5ed0; font-size: 9px; }
+.follow-up-disclosure { margin: 0; color: #85899a; font-size: 9px; line-height: 1.55; }
+.follow-up-form [data-slot="dialog-footer"] { margin-top: 4px; }
+.mail-list-dialog { max-width: 560px; }
+.mail-list-scroll { max-height: min(58vh, 600px); overflow-y: auto; padding-right: 5px; }
+.mail-reader { max-height: min(55vh, 560px); overflow: auto; margin: 0; border: 1px solid #eeedf4; border-radius: 9px; background: #fbfbfd; padding: 14px; color: #4c4f60; font: 12px/1.65 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+.mail-job-summary { display: flex; align-items: center; gap: 10px; color: #505265; font-size: 11px; }
+.mail-job-summary span { overflow: hidden; color: #85899a; text-overflow: ellipsis; white-space: nowrap; }
 .dialog-hero-icon { display: grid; width: 38px; height: 38px; place-items: center; margin-bottom: 3px; border: 1px solid #e6e2ff; border-radius: 11px; background: #f5f2ff; color: #6d5dd5; }
 .assistant-icon { border-color: #e9e1ff; background: linear-gradient(145deg,#f5f2ff,#fff4ee); color: #775dd7; }
 .permission-note { border: 1px solid #eeedf4; border-radius: 9px; background: #fafafd; padding: 12px; }

@@ -95,6 +95,19 @@ type GmailTrackedApplication = {
   latest_update: string;
 };
 
+type GmailMessageSummary = {
+  id: string;
+  subject: string;
+  sender: string;
+  received_at: string;
+  snippet: string;
+  company: string | null;
+  role: string | null;
+  status: ApplicationStatus | null;
+};
+
+type GmailMessageDetail = GmailMessageSummary & { body: string };
+
 const apiBaseUrl = (process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000").replace(/\/$/, "");
 
 const gmailCallbackMessages: Record<string, string> = {
@@ -168,10 +181,25 @@ function StatusBadge({ status }: { status: ApplicationStatus }) {
   return <Badge className={`status-badge ${statusClass[status]}`}>{status}</Badge>;
 }
 
+function GmailEmailRow({ message, onOpen, onFollowUp }: { message: GmailMessageSummary; onOpen: () => void; onFollowUp: () => void }) {
+  const senderName = message.company || message.sender.split("<")[0].trim() || message.sender;
+  return <div className="email-row email-row-action">
+    <button type="button" className="email-open-row" onClick={onOpen}>
+      <span className="email-mark" style={{ backgroundColor: "#6e5de7" }}>{senderName.slice(0, 1).toUpperCase()}</span>
+      <span className="email-copy">
+        <span className="email-copy-heading"><strong>{senderName}</strong><time>{new Date(message.received_at).toLocaleDateString()}</time></span>
+        <span className="email-subject">{message.subject}</span>
+        <Badge className="email-kind">{message.status || "Job email"}</Badge>
+      </span>
+    </button>
+    <Button variant="outline" size="sm" className="email-follow-up" onClick={onFollowUp}>Follow up</Button>
+  </div>;
+}
+
 export default function Home() {
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("All statuses");
-  const [dialog, setDialog] = useState<"gmail" | "notifications" | "assistant" | "settings" | null>(null);
+  const [dialog, setDialog] = useState<"gmail" | "mail" | "mail-list" | "follow-up" | "notifications" | "assistant" | "settings" | null>(null);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [assistantQuestion, setAssistantQuestion] = useState("");
   const [assistantAnswer, setAssistantAnswer] = useState("");
@@ -182,6 +210,16 @@ export default function Home() {
   const [gmailTracked, setGmailTracked] = useState(0);
   const [gmailLastSync, setGmailLastSync] = useState<string | null>(null);
   const [gmailApplications, setGmailApplications] = useState<Application[]>([]);
+  const [gmailMessages, setGmailMessages] = useState<GmailMessageSummary[]>([]);
+  const [openedMessage, setOpenedMessage] = useState<GmailMessageDetail | null>(null);
+  const [mailLoading, setMailLoading] = useState(false);
+  const [mailError, setMailError] = useState("");
+  const [followUpMessage, setFollowUpMessage] = useState<GmailMessageSummary | null>(null);
+  const [followUpPrompt, setFollowUpPrompt] = useState("");
+  const [followUpResume, setFollowUpResume] = useState<File | null>(null);
+  const [followUpBusy, setFollowUpBusy] = useState(false);
+  const [followUpError, setFollowUpError] = useState("");
+  const [followUpSuccess, setFollowUpSuccess] = useState("");
   const searchRef = useRef<HTMLInputElement>(null);
   const autoSyncStarted = useRef(false);
 
@@ -223,6 +261,7 @@ export default function Home() {
           setGmailTracked(0);
           setGmailLastSync(null);
           setGmailApplications([]);
+          setGmailMessages([]);
           return;
         }
         const syncResponse = await fetch(`${apiBaseUrl}/api/v1/gmail/sync/status`, { credentials: "include", cache: "no-store" });
@@ -284,6 +323,63 @@ export default function Home() {
     })));
   }
 
+  async function loadGmailMessages() {
+    const response = await fetch(`${apiBaseUrl}/api/v1/gmail/messages`, { credentials: "include", cache: "no-store" });
+    if (!response.ok) return;
+    const result = await response.json() as { messages: GmailMessageSummary[] };
+    setGmailMessages(result.messages);
+  }
+
+  async function openGmailMessage(message: GmailMessageSummary) {
+    setOpenedMessage({ ...message, body: "" });
+    setMailError("");
+    setMailLoading(true);
+    setDialog("mail");
+    try {
+      const response = await fetch(`${apiBaseUrl}/api/v1/gmail/messages/${encodeURIComponent(message.id)}`, { credentials: "include", cache: "no-store" });
+      const result = await response.json() as GmailMessageDetail & { detail?: string };
+      if (!response.ok) throw new Error(result.detail || "This email could not be opened.");
+      setOpenedMessage(result);
+    } catch (error) {
+      setMailError(error instanceof Error ? error.message : "This email could not be opened.");
+    } finally {
+      setMailLoading(false);
+    }
+  }
+
+  function startFollowUp(message: GmailMessageSummary) {
+    setFollowUpMessage(message);
+    setFollowUpPrompt("");
+    setFollowUpResume(null);
+    setFollowUpError("");
+    setFollowUpSuccess("");
+    setDialog("follow-up");
+  }
+
+  async function submitFollowUp(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!followUpMessage) return;
+    setFollowUpBusy(true);
+    setFollowUpError("");
+    setFollowUpSuccess("");
+    try {
+      const form = new FormData();
+      form.set("prompt", followUpPrompt);
+      if (followUpResume) form.set("resume", followUpResume);
+      const response = await fetch(`${apiBaseUrl}/api/v1/gmail/messages/${encodeURIComponent(followUpMessage.id)}/follow-up`, {
+        method: "POST", credentials: "include", body: form,
+      });
+      const result = await response.json() as { detail?: string; recipient?: string };
+      if (!response.ok) throw new Error(result.detail || "The follow-up could not be sent.");
+      setFollowUpSuccess(`Follow-up sent to ${result.recipient || "the recipient"}.`);
+      window.setTimeout(() => setDialog((current) => current === "follow-up" ? null : current), 1700);
+    } catch (error) {
+      setFollowUpError(error instanceof Error ? error.message : "The follow-up could not be sent.");
+    } finally {
+      setFollowUpBusy(false);
+    }
+  }
+
   async function connectGmail() {
     setGmailBusy(true);
     setGmailError("");
@@ -317,6 +413,7 @@ export default function Home() {
       setGmailTracked(0);
       setGmailLastSync(null);
       setGmailApplications([]);
+      setGmailMessages([]);
     } catch (error) {
       setGmailError(error instanceof Error ? error.message : "Could not disconnect Gmail.");
     } finally {
@@ -341,6 +438,7 @@ export default function Home() {
         ? `First sync complete. ${result.imported || 0} relevant messages imported from the last 60 days.`
         : `Sync complete. ${result.imported || 0} new relevant messages imported.`);
       await loadTrackedApplications();
+      await loadGmailMessages();
     } catch (error) {
       setGmailError(error instanceof TypeError
         ? `Could not reach the JobPilot API at ${apiBaseUrl}. Start the backend and try again.`
@@ -544,8 +642,9 @@ export default function Home() {
               <Card className="panel email-panel" id="email-activity">
                 <CardHeader className="panel-heading compact-heading"><div><CardTitle>Recent email activity</CardTitle><p>{gmailEmail ? `${gmailTracked} relevant messages tracked` : "Demo email activity · not synced"}</p></div><button className="icon-subtle" aria-label="Connect email" onClick={() => setDialog("gmail")}><Mail size={16} /></button></CardHeader>
                 <CardContent className="email-list">
-                  {(gmailEmail ? gmailApplications.slice(0, 3).map((application) => ({ company: application.company, subject: application.latestUpdate || application.role, time: application.date, kind: application.status, color: application.color })) : recentEmails).map((email) => <div className="email-row" key={email.subject}><span className="email-mark" style={{ backgroundColor: email.color }}>{email.company.slice(0, 1)}</span><div className="email-copy"><div><strong>{email.company}</strong><time>{email.time}</time></div><p>{email.subject}</p><Badge className="email-kind">{email.kind}</Badge></div></div>)}
-                  <button className="connect-email-link" onClick={() => setDialog("gmail")}>{gmailEmail ? `Connected as ${gmailEmail}` : "Connect Gmail with Google OAuth"} <ArrowRight size={14} /></button>
+                  {gmailEmail ? gmailMessages.slice(0, 3).map((message) => <GmailEmailRow key={message.id} message={message} onOpen={() => void openGmailMessage(message)} onFollowUp={() => startFollowUp(message)} />) : recentEmails.map((email) => <div className="email-row" key={email.subject}><span className="email-mark" style={{ backgroundColor: email.color }}>{email.company.slice(0, 1)}</span><div className="email-copy"><div><strong>{email.company}</strong><time>{email.time}</time></div><p>{email.subject}</p><Badge className="email-kind">{email.kind}</Badge></div></div>)}
+                  {gmailEmail && gmailMessages.length === 0 && <p className="email-empty">No job-related emails found yet. Use Sync Gmail to check again.</p>}
+                  {gmailEmail && gmailMessages.length > 3 ? <button className="connect-email-link" onClick={() => setDialog("mail-list")}>View all {gmailMessages.length} job emails <ArrowRight size={14} /></button> : <button className="connect-email-link" onClick={() => setDialog("gmail")}>{gmailEmail ? `Connected as ${gmailEmail}` : "Connect Gmail with Google OAuth"} <ArrowRight size={14} /></button>}
                 </CardContent>
               </Card>
             </div>
@@ -555,16 +654,53 @@ export default function Home() {
         </div>
       </main>
 
+      <Dialog open={dialog === "mail-list"} onOpenChange={(open) => { if (!open) setDialog(null); }}>
+        <DialogContent className="app-dialog mail-list-dialog">
+          <DialogHeader><div className="dialog-hero-icon"><Mail size={20} /></div><DialogTitle>Job related emails</DialogTitle><DialogDescription>Open an email to read it here in JobPilot.</DialogDescription></DialogHeader>
+          <div className="mail-list-scroll">{gmailMessages.map((message) => <GmailEmailRow key={message.id} message={message} onOpen={() => void openGmailMessage(message)} onFollowUp={() => startFollowUp(message)} />)}</div>
+          <DialogFooter><Button variant="outline" onClick={() => setDialog(null)}>Close</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={dialog === "mail"} onOpenChange={(open) => { if (!open) { setDialog(null); setOpenedMessage(null); } }}>
+        <DialogContent className="app-dialog mail-dialog">
+          <DialogHeader><div className="dialog-hero-icon"><Mail size={20} /></div><DialogTitle>{openedMessage?.subject || "Job email"}</DialogTitle><DialogDescription>{openedMessage?.sender}{openedMessage ? ` · ${new Date(openedMessage.received_at).toLocaleString()}` : ""}</DialogDescription></DialogHeader>
+          {openedMessage?.company && <div className="mail-job-summary"><strong>{openedMessage.company}</strong><span>{openedMessage.role || "Role not identified"}</span>{openedMessage.status && <Badge className="email-kind">{openedMessage.status}</Badge>}</div>}
+          {mailLoading && <p className="dialog-description">Loading message…</p>}
+          {mailError && <div className="integration-error" role="alert">{mailError}</div>}
+          {!mailLoading && !mailError && <pre className="mail-reader">{openedMessage?.body}</pre>}
+          <DialogFooter><Button variant="outline" onClick={() => { setDialog(null); setOpenedMessage(null); }}>Close</Button><Button className="primary-action" onClick={() => openedMessage && startFollowUp(openedMessage)}>Follow up</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={dialog === "follow-up"} onOpenChange={(open) => { if (!open && !followUpBusy) setDialog(null); }}>
+        <DialogContent className="app-dialog follow-up-dialog">
+          <DialogHeader><div className="dialog-hero-icon"><Send size={20} /></div><DialogTitle>Follow up by email</DialogTitle><DialogDescription>Replying to {followUpMessage?.company || followUpMessage?.sender} · {followUpMessage?.subject}</DialogDescription></DialogHeader>
+          <form className="follow-up-form" onSubmit={(event) => void submitFollowUp(event)}>
+            <label htmlFor="follow-up-prompt">What would you like to ask?</label>
+            <textarea id="follow-up-prompt" required minLength={3} maxLength={4000} value={followUpPrompt} onChange={(event) => setFollowUpPrompt(event.target.value)} placeholder="For example: Ask whether there is an update on my application and reiterate my interest in the role." />
+            <label htmlFor="follow-up-resume">Attach a résumé (optional)</label>
+            <input id="follow-up-resume" type="file" accept=".pdf,.docx,.txt,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain" onChange={(event) => setFollowUpResume(event.target.files?.[0] || null)} />
+            {followUpResume && <span className="resume-picked">Attached: {followUpResume.name}<button type="button" onClick={() => setFollowUpResume(null)}>Remove</button></span>}
+            <p className="follow-up-disclosure">Submitting asks AI to write a concise reply using this email and your request, then sends it in the same Gmail thread. The résumé, if selected, will be attached.</p>
+            {followUpError && <div className="integration-error" role="alert">{followUpError}</div>}
+            {followUpSuccess && <div className="integration-success" role="status">{followUpSuccess}</div>}
+            <DialogFooter><Button type="button" variant="outline" disabled={followUpBusy} onClick={() => setDialog(null)}>Cancel</Button><Button type="submit" className="primary-action" disabled={followUpBusy || !followUpPrompt.trim()}>{followUpBusy ? "Writing and sending…" : "Generate & send"}</Button></DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={dialog === "gmail"} onOpenChange={(open) => { if (!open) setDialog(null); }}>
         <DialogContent className="app-dialog simple-dialog">
-          <DialogHeader><div className="dialog-hero-icon"><Mail size={20} /></div><DialogTitle>{gmailEmail ? "Gmail connected" : "Connect your Gmail"}</DialogTitle><DialogDescription>{gmailEmail ? `Connected as ${gmailEmail}.` : "Continue to Google to choose an account and approve read-only Gmail access. JobPilot never asks for your Gmail password."}</DialogDescription></DialogHeader>
-          <div className="permission-note"><strong>Read-only access to Gmail</strong><p>After you connect, JobPilot scans up to the last 60 days for job-search messages and checks for updates when you reopen the dashboard. It uses message headers and short Gmail snippets to infer company, role, and status, then stores those fields with message IDs, sender, subject, and date. Message bodies and unrelated mail are not saved.</p><p>Role detection may need correction if an email is unclear. Draft creation requires separate permission, and JobPilot will not send messages automatically.</p></div>
+          <DialogHeader><div className="dialog-hero-icon"><Mail size={20} /></div><DialogTitle>{gmailEmail ? "Gmail connected" : "Connect your Gmail"}</DialogTitle><DialogDescription>{gmailEmail ? `Connected as ${gmailEmail}.` : "Continue to Google to choose an account and approve Gmail access. JobPilot never asks for your Gmail password."}</DialogDescription></DialogHeader>
+          <div className="permission-note"><strong>Gmail access for tracking and requested follow-ups</strong><p>After you connect, JobPilot scans up to the last 60 days for job-search messages and checks for updates when you reopen the dashboard. It fetches an email body only when you open it or request an AI follow-up. Message bodies and résumé contents are not stored.</p><p>When you submit a follow-up, JobPilot writes and sends the reply in that email thread. Reconnect Google to approve the Gmail send permission if your existing connection only has read access.</p></div>
           {gmailEmail && <p className="dialog-description">{gmailTracked} relevant messages tracked{gmailLastSync ? ` · last synced ${new Date(gmailLastSync).toLocaleString()}` : " · not synced yet"}.</p>}
           {gmailError && <div className="integration-error" role="alert">{gmailError}</div>}
           {gmailNotice && <div className="integration-success" role="status">{gmailNotice}</div>}
           <DialogFooter>
             {gmailEmail && <Button variant="outline" disabled={gmailBusy} onClick={disconnectGmail}>{gmailBusy ? "Disconnecting…" : "Disconnect Gmail"}</Button>}
             <Button variant="outline" disabled={gmailBusy} onClick={() => setDialog(null)}>Close</Button>
+            {gmailEmail && <Button variant="outline" disabled={gmailBusy} onClick={connectGmail}>Reconnect for sending</Button>}
             {gmailEmail && <Button className="primary-action" disabled={gmailBusy} onClick={syncGmail}>{gmailBusy ? "Syncing…" : "Sync Gmail"}</Button>}
             {!gmailEmail && <Button className="primary-action" disabled={gmailBusy} onClick={connectGmail}>{gmailBusy ? "Connecting…" : "Continue with Google"}</Button>}
           </DialogFooter>

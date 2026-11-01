@@ -4,7 +4,7 @@ JobPilot AI is a single workspace for automatically tracking a user's job search
 
 ## Current status
 
-The first implementation slice establishes a responsive Next.js dashboard, a demo-only application list, Recharts analytics, shadcn/ui components, and a FastAPI service shell. Search and status filters work. Gmail, AI, account authentication, portal connectors, WhatsApp/n8n, billing, and database persistence are not connected yet. The dashboard labels sample records as demo data and does not access Gmail or send messages.
+The project includes a responsive Next.js demo dashboard and a Google OAuth flow for read-only Gmail access. OAuth state is validated, refresh tokens are encrypted at rest, and the UI supports connection status and disconnect. Application records remain clearly labeled demo data: Gmail import, AI, portal connectors, WhatsApp/n8n, billing, and persistent application tracking are not implemented yet.
 
 The intended normal workflow needs no manual application feeding: after the user connects Gmail through Google OAuth, JobPilot will import up to the last 60 days of relevant mail and keep application records updated. The product must never ask for or store a Gmail password. AI follow-up drafts require the user's permission and remain unsent for review.
 
@@ -15,8 +15,8 @@ The intended normal workflow needs no manual application feeding: after the user
 - [x] Add working in-session application creation, search, status filtering, and demo assistant responses.
 - [x] Establish the FastAPI configuration and health endpoint.
 - [ ] Add database models, Alembic migrations, and user-scoped application APIs.
-- [ ] Implement the single-workspace sign-in flow and secure account/session management.
-- [ ] Add Gmail OAuth, encrypted token storage, a consented 60-day first sync, and incremental background sync.
+- [x] Establish Google OAuth sign-in, read-only Gmail connection, encrypted token storage, and disconnect controls.
+- [ ] Add a consented 60-day first sync and incremental background sync.
 - [ ] Automatically classify relevant mail, deduplicate applications, and support correction/exclusion without manual feeding.
 - [ ] Add permission-gated AI drafts for user-selected conversations; save drafts only and leave sending to the user.
 - [ ] Add supported, user-authorized job-portal status connectors with source and last-checked details.
@@ -29,7 +29,7 @@ The intended normal workflow needs no manual application feeding: after the user
 
 - Node.js 20.9 or newer and npm
 - Python 3.11 or newer
-- PostgreSQL and Redis for later database-backed and background-task features
+- PostgreSQL for OAuth credential storage and persistent data; Redis for background tasks
 
 No API credentials are needed to preview the dashboard. The sample workspace is separate from live integrations.
 
@@ -59,7 +59,17 @@ The API health route is `http://localhost:8000/api/v1/health`; interactive docs 
 
 ## Configuration and privacy
 
-Copy `.env.example` to `.env` and supply credentials only when implementing the corresponding server-side integration. Never commit `.env` or expose provider keys in frontend code. Gmail access must use Google OAuth with narrow permissions. Gmail password collection is prohibited. AI draft creation requires consent for the selected conversation; drafts are not sent automatically. WhatsApp is opt-in, and payment confirmation must come from verified server-side webhooks.
+Copy `.env.example` to `.env` and supply credentials only when implementing the corresponding server-side integration. Set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`, and a high-entropy `APP_SECRET_KEY` to enable the current Google OAuth connection. Register the redirect URI in Google Cloud and set `NEXT_PUBLIC_API_BASE_URL` in `frontend/.env.local` if the API is not at `http://localhost:8000`. Never commit `.env` or expose provider keys in frontend code. Gmail access uses Google OAuth with read-only permission; Gmail password collection is prohibited. The current connection does not import messages yet. AI draft creation requires consent for the selected conversation; drafts are not sent automatically. WhatsApp is opt-in, and payment confirmation must come from verified server-side webhooks.
+
+### Local Google OAuth setup
+
+1. Enable the Gmail API in Google Cloud, configure the OAuth consent screen, and create a **Web application** OAuth client.
+2. Add this exact authorized redirect URI to that client: `http://localhost:8000/api/v1/auth/google/callback`. Add your Google account as a test user while the consent screen is in testing.
+3. Put the client ID and secret in the root `.env` as `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`. Generate a high-entropy `APP_SECRET_KEY`, for example with `python -c 'import secrets; print(secrets.token_urlsafe(48))'`. Keep these values private.
+4. Start PostgreSQL, confirm `DATABASE_URL` points to it, and apply the schema from the repository root: `alembic -c backend/alembic.ini upgrade head`.
+5. Start the FastAPI backend and Next.js frontend, then choose **Connect Gmail** and approve the read-only request in Google's consent screen. Copy `frontend/.env.example` to `frontend/.env.local` only if the API runs at a different origin; update `CORS_ORIGINS` in the backend `.env` to include the frontend origin too.
+
+The OAuth redirect must match exactly. The app requests `openid`, `email`, and `gmail.readonly`; it does not request compose or send access. Gmail read scopes are sensitive/restricted and can require Google verification before general release. Read Google's [web server OAuth guide](https://developers.google.com/identity/protocols/oauth2/web-server) and [Gmail scope guide](https://developers.google.com/workspace/gmail/api/auth/scopes). OAuth currently links and stores the account only; email import and application tracking are a later step.
 
 ## Project layout
 

@@ -75,6 +75,22 @@ type Application = {
   followUp?: string;
 };
 
+type GmailStatus = {
+  connected: boolean;
+  email?: string | null;
+};
+
+const apiBaseUrl = (process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000").replace(/\/$/, "");
+
+const gmailCallbackMessages: Record<string, string> = {
+  denied: "Google access was not granted. You can try again whenever you’re ready.",
+  state_error: "The Google sign-in expired or could not be verified. Please start again.",
+  identity_error: "Google could not verify the account identity. Please try again.",
+  reauthorize: "Google did not return an offline access token. Try again and approve the requested access.",
+  storage_error: "Google authorized the account, but JobPilot could not save the connection. Check the database and try again.",
+  connect_error: "Google sign-in did not complete. Please try again.",
+};
+
 const starterApplications: Application[] = [
   { id: 1, company: "Linear", initials: "L", color: "#6e5de7", role: "Product Designer", date: "Oct 28, 2026", status: "Interview", followUp: "Nov 3" },
   { id: 2, company: "Stripe", initials: "S", color: "#6258d9", role: "Senior Product Designer", date: "Oct 25, 2026", status: "Assessment", followUp: "Nov 2" },
@@ -145,6 +161,9 @@ export default function Home() {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [assistantQuestion, setAssistantQuestion] = useState("");
   const [assistantAnswer, setAssistantAnswer] = useState("");
+  const [gmailEmail, setGmailEmail] = useState<string | null>(null);
+  const [gmailBusy, setGmailBusy] = useState(false);
+  const [gmailError, setGmailError] = useState("");
   const searchRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -158,6 +177,36 @@ export default function Home() {
     return () => window.removeEventListener("keydown", focusSearch);
   }, []);
 
+  useEffect(() => {
+    let active = true;
+    const params = new URLSearchParams(window.location.search);
+    const callbackResult = params.get("gmail");
+    if (callbackResult) {
+      window.setTimeout(() => {
+        if (!active) return;
+        setDialog("gmail");
+        setGmailError(callbackResult === "connected"
+          ? ""
+          : gmailCallbackMessages[callbackResult] || gmailCallbackMessages.connect_error);
+      }, 0);
+      window.history.replaceState(null, "", `${window.location.pathname}${window.location.hash}`);
+    }
+
+    fetch(`${apiBaseUrl}/api/v1/auth/google/status`, { credentials: "include", cache: "no-store" })
+      .then(async (response) => {
+        if (!response.ok) throw new Error("Could not read Gmail connection status.");
+        return (await response.json()) as GmailStatus;
+      })
+      .then((status) => {
+        if (active) setGmailEmail(status.connected ? status.email || null : null);
+      })
+      .catch(() => {
+        if (active) setGmailEmail(null);
+      });
+
+    return () => { active = false; };
+  }, []);
+
   const filteredApplications = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
     return applications.filter((application) => {
@@ -169,6 +218,43 @@ export default function Home() {
 
   const totalApplications = 24;
 
+  async function connectGmail() {
+    setGmailBusy(true);
+    setGmailError("");
+    try {
+      const response = await fetch(`${apiBaseUrl}/api/v1/auth/google/connect`, {
+        credentials: "include",
+        cache: "no-store",
+      });
+      const result = await response.json() as { authorization_url?: string; detail?: string };
+      if (!response.ok) throw new Error(result.detail || "Google sign-in could not start.");
+      if (!result.authorization_url) throw new Error("Google sign-in returned no authorization URL.");
+      window.location.assign(result.authorization_url);
+    } catch (error) {
+      setGmailError(error instanceof TypeError
+        ? `Could not reach the JobPilot API at ${apiBaseUrl}. Start the backend and try again.`
+        : error instanceof Error ? error.message : "Could not start Google sign-in.");
+      setGmailBusy(false);
+    }
+  }
+
+  async function disconnectGmail() {
+    setGmailBusy(true);
+    setGmailError("");
+    try {
+      const response = await fetch(`${apiBaseUrl}/api/v1/auth/google/disconnect`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      if (!response.ok) throw new Error("JobPilot could not disconnect Gmail. Please try again.");
+      setGmailEmail(null);
+    } catch (error) {
+      setGmailError(error instanceof Error ? error.message : "Could not disconnect Gmail.");
+    } finally {
+      setGmailBusy(false);
+    }
+  }
+
   function askAssistant(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const question = assistantQuestion.trim().toLowerCase();
@@ -176,7 +262,7 @@ export default function Home() {
     if (question.includes("interview")) {
       setAssistantAnswer("Your demo workspace has 4 interviews in progress. Sample records are shown for preview only.");
     } else if (question.includes("how many") || question.includes("total") || question.includes("application")) {
-      setAssistantAnswer(`Your demo workspace has ${totalApplications} sample applications. No personal Gmail or job-search data is connected.`);
+      setAssistantAnswer(`Your demo workspace has ${totalApplications} sample applications. Gmail messages and live job-search data are not loaded.`);
     } else {
       setAssistantAnswer("The career assistant is in demo mode. Connect the backend and configure an AI provider to get answers grounded in your own application records.");
     }
@@ -211,9 +297,9 @@ export default function Home() {
         <div className="sidebar-spacer" />
         <div className="sidebar-tip">
           <div className="tip-icon"><Sparkles size={16} /></div>
-          <strong>Your search, in sync</strong>
-          <p>Connect Gmail to spot application updates automatically.</p>
-          <button onClick={() => setDialog("gmail")}>Connect Gmail <ArrowRight size={13} /></button>
+          <strong>{gmailEmail ? "Gmail linked" : "Connect your inbox"}</strong>
+          <p>Connect Google to link your inbox without sharing your password.</p>
+          <button onClick={() => setDialog("gmail")}>{gmailEmail ? "Gmail connected" : "Connect Gmail"} <ArrowRight size={13} /></button>
         </div>
         <button className="nav-link settings-link" onClick={() => setDialog("settings")}><Settings2 size={17} /><span>Settings & support</span><CircleHelp size={15} className="settings-help" /></button>
         <div className="profile-row">
@@ -239,7 +325,7 @@ export default function Home() {
         </header>
 
         <div className="content-wrap">
-          <div className="demo-banner"><span className="demo-indicator" /> <strong>Demo workspace</strong><span>Sample data is shown. Connect an account to enable live sync.</span><button onClick={() => setDialog("gmail")}>Learn more <ArrowUpRight size={13} /></button></div>
+          <div className="demo-banner"><span className="demo-indicator" /> <strong>Demo workspace</strong><span>Sample data is shown. Gmail import and application tracking are not enabled yet.</span><button onClick={() => setDialog("gmail")}>{gmailEmail ? "Gmail connected" : "Connect Gmail"} <ArrowUpRight size={13} /></button></div>
 
           <section className="welcome-row">
             <div>
@@ -249,7 +335,7 @@ export default function Home() {
             </div>
             <div className="welcome-actions">
               <span className="sync-label"><span className="sync-dot" /> Demo data · not synced</span>
-              <Button className="primary-action" onClick={() => setDialog("gmail")}><Mail size={15} /> Connect inbox</Button>
+              <Button className="primary-action" onClick={() => setDialog("gmail")}><Mail size={15} /> {gmailEmail ? "Gmail connected" : "Connect inbox"}</Button>
             </div>
           </section>
 
@@ -357,24 +443,29 @@ export default function Home() {
               </Card>
 
               <Card className="panel email-panel" id="email-activity">
-                <CardHeader className="panel-heading compact-heading"><div><CardTitle>Recent email activity</CardTitle><p>Job-related messages detected</p></div><button className="icon-subtle" aria-label="Connect email" onClick={() => setDialog("gmail")}><Mail size={16} /></button></CardHeader>
+                <CardHeader className="panel-heading compact-heading"><div><CardTitle>Recent email activity</CardTitle><p>Demo email activity · not synced</p></div><button className="icon-subtle" aria-label="Connect email" onClick={() => setDialog("gmail")}><Mail size={16} /></button></CardHeader>
                 <CardContent className="email-list">
                   {recentEmails.map((email) => <div className="email-row" key={email.subject}><span className="email-mark" style={{ backgroundColor: email.color }}>{email.company.slice(0, 1)}</span><div className="email-copy"><div><strong>{email.company}</strong><time>{email.time}</time></div><p>{email.subject}</p><Badge className="email-kind">{email.kind}</Badge></div></div>)}
-                  <button className="connect-email-link" onClick={() => setDialog("gmail")}>Connect Gmail for live updates <ArrowRight size={14} /></button>
+                  <button className="connect-email-link" onClick={() => setDialog("gmail")}>{gmailEmail ? `Connected as ${gmailEmail}` : "Connect Gmail with Google OAuth"} <ArrowRight size={14} /></button>
                 </CardContent>
               </Card>
             </div>
           </section>
 
-          <footer className="page-footer"><span>Made for the next step in your career.</span><span><span className="footer-dot" /> Demo mode · No account connected</span></footer>
+          <footer className="page-footer"><span>Made for the next step in your career.</span><span><span className="footer-dot" /> Demo mode · {gmailEmail ? "Gmail connected; demo records shown" : "No account connected"}</span></footer>
         </div>
       </main>
 
       <Dialog open={dialog === "gmail"} onOpenChange={(open) => { if (!open) setDialog(null); }}>
         <DialogContent className="app-dialog simple-dialog">
-          <DialogHeader><div className="dialog-hero-icon"><Mail size={20} /></div><DialogTitle>Connect your Gmail</DialogTitle><DialogDescription>Gmail OAuth is not configured in this starter yet. No email account has been accessed.</DialogDescription></DialogHeader>
-          <div className="permission-note"><strong>Import your recent job search</strong><p>After you authorize Google OAuth, JobPilot will scan up to the last 60 days of relevant mail and keep new application updates in sync. It will never ask for or store your Gmail password.</p><p>AI drafts for a conversation will require separate permission. JobPilot will save drafts for you to review and will not send them.</p></div>
-          <DialogFooter><Button variant="outline" onClick={() => setDialog(null)}>Got it</Button></DialogFooter>
+          <DialogHeader><div className="dialog-hero-icon"><Mail size={20} /></div><DialogTitle>{gmailEmail ? "Gmail connected" : "Connect your Gmail"}</DialogTitle><DialogDescription>{gmailEmail ? `Connected as ${gmailEmail}.` : "Continue to Google to choose an account and approve read-only Gmail access. JobPilot never asks for your Gmail password."}</DialogDescription></DialogHeader>
+          <div className="permission-note"><strong>Read-only access to Gmail</strong><p>This connection authorizes JobPilot to read messages. Gmail import and job application tracking are not enabled yet.</p><p>Draft creation will require separate permission. JobPilot will not send messages automatically.</p></div>
+          {gmailError && <div className="integration-error" role="alert">{gmailError}</div>}
+          <DialogFooter>
+            {gmailEmail && <Button variant="outline" disabled={gmailBusy} onClick={disconnectGmail}>{gmailBusy ? "Disconnecting…" : "Disconnect Gmail"}</Button>}
+            <Button variant="outline" disabled={gmailBusy} onClick={() => setDialog(null)}>Close</Button>
+            {!gmailEmail && <Button className="primary-action" disabled={gmailBusy} onClick={connectGmail}>{gmailBusy ? "Connecting…" : "Continue with Google"}</Button>}
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 

@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     google_client_id: Optional[str] = None
     google_client_secret: Optional[SecretStr] = None
     google_redirect_uri: Optional[str] = None
+    frontend_app_url: str = "http://localhost:3000"
     openai_api_key: Optional[SecretStr] = None
     stripe_secret_key: Optional[SecretStr] = None
     stripe_webhook_secret: Optional[SecretStr] = None

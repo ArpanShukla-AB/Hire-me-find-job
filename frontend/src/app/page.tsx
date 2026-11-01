@@ -19,7 +19,6 @@ import {
   Mail,
   Menu,
   MessageSquareText,
-  Plus,
   Search,
   Send,
   Settings2,
@@ -139,15 +138,13 @@ function StatusBadge({ status }: { status: ApplicationStatus }) {
 }
 
 export default function Home() {
-  const [applications, setApplications] = useState(starterApplications);
+  const applications = starterApplications;
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("All statuses");
-  const [dialog, setDialog] = useState<"application" | "gmail" | "notifications" | "assistant" | "settings" | null>(null);
+  const [dialog, setDialog] = useState<"gmail" | "notifications" | "assistant" | "settings" | null>(null);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [assistantQuestion, setAssistantQuestion] = useState("");
   const [assistantAnswer, setAssistantAnswer] = useState("");
-  const [formError, setFormError] = useState("");
-  const [draft, setDraft] = useState({ company: "", role: "", date: "", status: "Applied" as ApplicationStatus });
   const searchRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -170,36 +167,7 @@ export default function Home() {
     });
   }, [applications, query, statusFilter]);
 
-  const extraApplications = applications.length - starterApplications.length;
-  const totalApplications = 24 + extraApplications;
-  const currentStatusMix = statusMix.map((item) => item.name === "Applied" ? { ...item, value: item.value + extraApplications } : item);
-
-  function addApplication(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const company = draft.company.trim();
-    const role = draft.role.trim();
-    if (!company || !role) {
-      setFormError("Add a company and a job title to save this application.");
-      return;
-    }
-    const initials = company.slice(0, 1).toUpperCase();
-    const colors = ["#6e5de7", "#168c86", "#e47c69", "#335bb5", "#c27823"];
-    setApplications((current) => [
-      {
-        id: Date.now(),
-        company,
-        role,
-        initials,
-        color: colors[current.length % colors.length],
-        date: draft.date ? new Date(`${draft.date}T12:00:00`).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "Today",
-        status: draft.status,
-      },
-      ...current,
-    ]);
-    setDraft({ company: "", role: "", date: "", status: "Applied" });
-    setFormError("");
-    setDialog(null);
-  }
+  const totalApplications = 24;
 
   function askAssistant(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -281,7 +249,7 @@ export default function Home() {
             </div>
             <div className="welcome-actions">
               <span className="sync-label"><span className="sync-dot" /> Demo data · not synced</span>
-              <Button className="primary-action" onClick={() => setDialog("application")}><Plus size={16} /> Add application</Button>
+              <Button className="primary-action" onClick={() => setDialog("gmail")}><Mail size={15} /> Connect inbox</Button>
             </div>
           </section>
 
@@ -336,8 +304,8 @@ export default function Home() {
                 <div className="donut-wrap">
                   <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
-                      <Pie data={currentStatusMix} dataKey="value" nameKey="name" innerRadius={52} outerRadius={70} paddingAngle={4} stroke="none">
-                        {currentStatusMix.map((entry) => <Cell key={entry.name} fill={entry.color} />)}
+                      <Pie data={statusMix} dataKey="value" nameKey="name" innerRadius={52} outerRadius={70} paddingAngle={4} stroke="none">
+                        {statusMix.map((entry) => <Cell key={entry.name} fill={entry.color} />)}
                       </Pie>
                       <Tooltip contentStyle={{ border: "1px solid #ebeaf2", borderRadius: 10, fontSize: 12 }} />
                     </PieChart>
@@ -345,7 +313,7 @@ export default function Home() {
                   <div className="donut-center"><strong>{totalApplications}</strong><span>total</span></div>
                 </div>
                 <div className="status-legend">
-                  {currentStatusMix.map((item) => <div key={item.name}><span><i style={{ backgroundColor: item.color }} />{item.name}</span><strong>{item.value}</strong></div>)}
+                  {statusMix.map((item) => <div key={item.name}><span><i style={{ backgroundColor: item.color }} />{item.name}</span><strong>{item.value}</strong></div>)}
                 </div>
               </CardContent>
             </Card>
@@ -357,7 +325,6 @@ export default function Home() {
                 <div><CardTitle>Recent applications</CardTitle><p>Your latest job search activity</p></div>
                 <div className="table-controls">
                   <label className="filter-select-label"><Filter size={14} /><select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} aria-label="Filter applications by status"><option>All statuses</option>{["Applied", "Assessment", "Interview", "HR round", "Offer received", "Rejected", "No response"].map((status) => <option key={status}>{status}</option>)}</select><ChevronDown size={13} /></label>
-                  <Button variant="outline" size="sm" className="table-add" onClick={() => setDialog("application")}><Plus size={14} /> Add</Button>
                 </div>
               </CardHeader>
               <CardContent className="table-content">
@@ -403,23 +370,10 @@ export default function Home() {
         </div>
       </main>
 
-      <Dialog open={dialog === "application"} onOpenChange={(open) => { if (!open) setDialog(null); }}>
-        <DialogContent className="app-dialog">
-          <DialogHeader><DialogTitle>Add an application</DialogTitle><DialogDescription>Save a job to your demo workspace. This sample entry stays in this browser session.</DialogDescription></DialogHeader>
-          <form className="application-form" onSubmit={addApplication}>
-            <label>Company<Input autoFocus value={draft.company} onChange={(event) => setDraft((current) => ({ ...current, company: event.target.value }))} placeholder="e.g. Acme Inc." /></label>
-            <label>Job title<Input value={draft.role} onChange={(event) => setDraft((current) => ({ ...current, role: event.target.value }))} placeholder="e.g. Product Designer" /></label>
-            <div className="form-two-columns"><label>Applied on<Input type="date" value={draft.date} onChange={(event) => setDraft((current) => ({ ...current, date: event.target.value }))} /></label><label>Status<select className="form-select" value={draft.status} onChange={(event) => setDraft((current) => ({ ...current, status: event.target.value as ApplicationStatus }))}>{["Applied", "Assessment", "Interview", "HR round", "Offer received", "Rejected", "No response"].map((status) => <option key={status}>{status}</option>)}</select></label></div>
-            {formError && <p className="form-error" role="alert">{formError}</p>}
-            <DialogFooter className="form-footer"><Button type="button" variant="outline" onClick={() => setDialog(null)}>Cancel</Button><Button type="submit" className="primary-action"><Plus size={15} /> Save application</Button></DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
-
       <Dialog open={dialog === "gmail"} onOpenChange={(open) => { if (!open) setDialog(null); }}>
         <DialogContent className="app-dialog simple-dialog">
           <DialogHeader><div className="dialog-hero-icon"><Mail size={20} /></div><DialogTitle>Connect your Gmail</DialogTitle><DialogDescription>Gmail OAuth is not configured in this starter yet. No email account has been accessed.</DialogDescription></DialogHeader>
-          <div className="permission-note"><strong>When this integration is available</strong><p>JobPilot will request only the email permissions needed to detect job-related conversations. You will review and authorize access with Google; your Gmail password is never stored.</p></div>
+          <div className="permission-note"><strong>Import your recent job search</strong><p>After you authorize Google OAuth, JobPilot will scan up to the last 60 days of relevant mail and keep new application updates in sync. It will never ask for or store your Gmail password.</p><p>AI drafts for a conversation will require separate permission. JobPilot will save drafts for you to review and will not send them.</p></div>
           <DialogFooter><Button variant="outline" onClick={() => setDialog(null)}>Got it</Button></DialogFooter>
         </DialogContent>
       </Dialog>

@@ -208,7 +208,6 @@ h1 span { color: #7769dc; }
 .filter-select-label { position: relative; display: flex; height: 29px; align-items: center; gap: 5px; border: 1px solid #ececf2; border-radius: 6px; padding: 0 8px; color: #888d9a; }
 .filter-select-label select { width: 89px; appearance: none; border: 0; outline: 0; background: transparent; color: #777c8b; font-size: 9px; cursor: pointer; }
 .filter-select-label > svg:last-child { margin-left: -5px; pointer-events: none; }
-.table-add { height: 29px; border-color: #e5e3f2; border-radius: 6px; padding: 0 8px; color: #6658c7; font-size: 9px; }
 .table-content { padding: 0; }
 .application-table { width: 100%; }
 .table-head, .table-row { display: grid; grid-template-columns: minmax(145px,1.5fr) minmax(82px,.82fr) minmax(94px,.9fr) minmax(75px,.68fr); align-items: center; gap: 8px; padding: 0 17px; }
@@ -272,14 +271,6 @@ h1 span { color: #7769dc; }
 .app-dialog { max-width: 430px; gap: 15px; border: 1px solid #e9eaf1; border-radius: 15px; padding: 22px; box-shadow: 0 24px 70px #22223c28; }
 .app-dialog [data-slot="dialog-title"] { color: #2e2e45; font-size: 17px; font-weight: 650; letter-spacing: -.3px; }
 .app-dialog [data-slot="dialog-description"] { color: #838899; font-size: 11px; line-height: 1.6; }
-.application-form { display: grid; gap: 13px; margin-top: 2px; }
-.application-form > label, .form-two-columns label { display: grid; gap: 6px; color: #565a6b; font-size: 10px; font-weight: 600; }
-.application-form [data-slot="input"] { height: 36px; border-radius: 7px; font-size: 11px; }
-.form-two-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-.form-select { height: 36px; width: 100%; border: 1px solid #e4e5ed; border-radius: 7px; background: white; padding: 0 9px; color: #515568; font-size: 10px; }
-.form-error { margin: -4px 0 0; color: #ca5960; font-size: 10px; }
-.form-footer { justify-content: flex-end; gap: 7px; margin-top: 3px; border: 0; background: transparent; padding: 0; }
-.form-footer button { height: 34px; font-size: 10px; }
 .simple-dialog { max-width: 390px; }
 .dialog-hero-icon { display: grid; width: 38px; height: 38px; place-items: center; margin-bottom: 3px; border: 1px solid #e6e2ff; border-radius: 11px; background: #f5f2ff; color: #6d5dd5; }
 .assistant-icon { border-color: #e9e1ff; background: linear-gradient(145deg,#f5f2ff,#fff4ee); color: #775dd7; }

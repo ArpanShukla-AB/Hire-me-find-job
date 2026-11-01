@@ -8,13 +8,11 @@ import {
   ArrowUpRight,
   Bell,
   BriefcaseBusiness,
-  CalendarClock,
   CalendarDays,
   ChevronDown,
   CircleHelp,
   Clock3,
   FileText,
-  Filter,
   LayoutDashboard,
   Mail,
   Menu,
@@ -153,33 +151,9 @@ const recentEmails = [
 
 const navItems = [
   { label: "Overview", href: "#overview", icon: LayoutDashboard },
-  { label: "Applications", href: "#applications", icon: BriefcaseBusiness },
   { label: "Email intelligence", href: "#email-activity", icon: Mail },
-  { label: "Follow-up agent", href: "#follow-ups", icon: CalendarClock },
   { label: "Analytics", href: "#analytics", icon: Activity },
 ];
-
-const statusClass: Record<ApplicationStatus, string> = {
-  Applied: "status-applied",
-  Assessment: "status-assessment",
-  Interview: "status-interview",
-  "HR round": "status-hr",
-  "Offer received": "status-offer",
-  Rejected: "status-rejected",
-  "No response": "status-no-response",
-};
-
-function CompanyMark({ application }: { application: Application }) {
-  return (
-    <span className="company-mark" style={{ backgroundColor: application.color }} aria-hidden="true">
-      {application.initials}
-    </span>
-  );
-}
-
-function StatusBadge({ status }: { status: ApplicationStatus }) {
-  return <Badge className={`status-badge ${statusClass[status]}`}>{status}</Badge>;
-}
 
 function GmailEmailRow({ message, onOpen, onFollowUp }: { message: GmailMessageSummary; onOpen: () => void; onFollowUp: () => void }) {
   const senderName = message.company || message.sender.split("<")[0].trim() || message.sender;
@@ -198,7 +172,6 @@ function GmailEmailRow({ message, onOpen, onFollowUp }: { message: GmailMessageS
 
 export default function Home() {
   const [query, setQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState("All statuses");
   const [dialog, setDialog] = useState<"gmail" | "mail" | "mail-list" | "follow-up" | "notifications" | "assistant" | "settings" | null>(null);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [assistantQuestion, setAssistantQuestion] = useState("");
@@ -286,14 +259,14 @@ export default function Home() {
 
   const applications = gmailEmail ? gmailApplications : starterApplications;
 
-  const filteredApplications = useMemo(() => {
+  const filteredGmailMessages = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
-    return applications.filter((application) => {
-      const matchesQuery = !normalizedQuery || `${application.company} ${application.role}`.toLowerCase().includes(normalizedQuery);
-      const matchesStatus = statusFilter === "All statuses" || application.status === statusFilter;
-      return matchesQuery && matchesStatus;
-    });
-  }, [applications, query, statusFilter]);
+    return gmailMessages.filter((message) => !normalizedQuery || `${message.company || ""} ${message.role || ""} ${message.subject} ${message.sender}`.toLowerCase().includes(normalizedQuery));
+  }, [gmailMessages, query]);
+  const filteredDemoEmails = useMemo(() => {
+    const normalizedQuery = query.trim().toLowerCase();
+    return recentEmails.filter((email) => !normalizedQuery || `${email.company} ${email.subject} ${email.kind}`.toLowerCase().includes(normalizedQuery));
+  }, [query]);
 
   const totalApplications = gmailEmail ? gmailApplications.length : 24;
   const countStatus = (status: ApplicationStatus) => applications.filter((application) => application.status === status).length;
@@ -513,7 +486,7 @@ export default function Home() {
           <div className="topbar-actions">
             <label className="global-search">
               <Search size={16} />
-              <Input ref={searchRef} value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search applications..." aria-label="Search applications" />
+              <Input ref={searchRef} value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search email activity..." aria-label="Search email activity" />
               <kbd>⌘ K</kbd>
             </label>
             <Button variant="ghost" size="icon" className="notification-button" aria-label="Notifications" onClick={() => setDialog("notifications")}><Bell size={18} /><span /></Button>
@@ -581,7 +554,6 @@ export default function Home() {
             <Card className="panel status-panel">
               <CardHeader className="panel-heading">
                 <div><CardTitle>Application status</CardTitle><p>Where things stand right now</p></div>
-                <button className="icon-subtle" aria-label="Filter status chart" onClick={() => { document.getElementById("applications")?.scrollIntoView({ behavior: "smooth" }); }}><Filter size={16} /></button>
               </CardHeader>
               <CardContent className="status-content">
                 <div className="donut-wrap">
@@ -603,51 +575,15 @@ export default function Home() {
           </section>
 
           <section className="bottom-grid">
-            <Card className="panel applications-panel" id="applications">
-              <CardHeader className="panel-heading applications-heading">
-                <div><CardTitle>Recent applications</CardTitle><p>Your latest job search activity</p></div>
-                <div className="table-controls">
-                  <label className="filter-select-label"><Filter size={14} /><select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} aria-label="Filter applications by status"><option>All statuses</option>{["Applied", "Assessment", "Interview", "HR round", "Offer received", "Rejected", "No response"].map((status) => <option key={status}>{status}</option>)}</select><ChevronDown size={13} /></label>
-                </div>
-              </CardHeader>
-              <CardContent className="table-content">
-                <div className="application-table" role="table" aria-label="Recent applications">
-                  <div className="table-head" role="row"><span>Company & role</span><span>Applied</span><span>Status</span><span>Follow-up</span></div>
-                  {filteredApplications.length > 0 ? filteredApplications.map((application) => (
-                    <div className="table-row" role="row" key={application.id}>
-                      <div className="company-cell"><CompanyMark application={application} /><span><strong>{application.company}</strong><small>{application.role}</small></span></div>
-                      <span className="applied-date">{application.date}</span>
-                      <span><StatusBadge status={application.status} /></span>
-                      <span className={`follow-date ${application.followUp ? "has-follow-up" : ""}`}>{application.followUp ? <><CalendarDays size={13} />{application.followUp}</> : <span className="no-follow-up">—</span>}</span>
-                    </div>
-                  )) : <div className="empty-results"><Search size={18} /><strong>{gmailEmail && !gmailApplications.length ? "No job roles found in recent email" : "No matching applications"}</strong><span>{gmailEmail && !gmailApplications.length ? "Your connected inbox was scanned. Try Sync Gmail again after application emails arrive." : "Try another search or status filter."}</span></div>}
-                </div>
-                <div className="table-foot"><span>Showing {filteredApplications.length} recent {filteredApplications.length === 1 ? "application" : "applications"} {!gmailEmail && <span className="table-demo">· demo records</span>}</span><a href="#applications">View applications <ArrowRight size={14} /></a></div>
+            <Card className="panel email-panel" id="email-activity">
+              <CardHeader className="panel-heading compact-heading"><div><CardTitle>Recent email activity</CardTitle><p>{gmailEmail ? `${gmailTracked} relevant messages tracked` : "Demo email activity · not synced"}</p></div><button className="icon-subtle" aria-label="Connect email" onClick={() => setDialog("gmail")}><Mail size={16} /></button></CardHeader>
+              <CardContent className="email-list">
+                {gmailEmail ? filteredGmailMessages.slice(0, 3).map((message) => <GmailEmailRow key={message.id} message={message} onOpen={() => void openGmailMessage(message)} onFollowUp={() => startFollowUp(message)} />) : filteredDemoEmails.slice(0, 3).map((email) => <div className="email-row" key={email.subject}><span className="email-mark" style={{ backgroundColor: email.color }}>{email.company.slice(0, 1)}</span><div className="email-copy"><div><strong>{email.company}</strong><time>{email.time}</time></div><p>{email.subject}</p><Badge className="email-kind">{email.kind}</Badge></div></div>)}
+                {gmailEmail && filteredGmailMessages.length === 0 && <p className="email-empty">{query.trim() ? "No matching emails. Try a different search." : "No job-related emails found yet. Use Sync Gmail to check again."}</p>}
+                {!gmailEmail && filteredDemoEmails.length === 0 && <p className="email-empty">No matching email activity.</p>}
+                {gmailEmail && gmailMessages.length > 3 ? <button className="connect-email-link" onClick={() => setDialog("mail-list")}>View all {gmailMessages.length} job emails <ArrowRight size={14} /></button> : <button className="connect-email-link" onClick={() => setDialog("gmail")}>{gmailEmail ? `Connected as ${gmailEmail}` : "Connect Gmail with Google OAuth"} <ArrowRight size={14} /></button>}
               </CardContent>
             </Card>
-
-            <div className="right-column">
-              <Card className="panel followup-panel" id="follow-ups">
-                <CardHeader className="panel-heading compact-heading"><div><CardTitle>Needs a follow-up</CardTitle><p>Keep the conversation moving</p></div><Badge className="due-count">3 due</Badge></CardHeader>
-                <CardContent className="followup-list">
-                  {[
-                    { company: "Notion", role: "Product Designer", when: "Today", initials: "N", color: "#20242c" },
-                    { company: "Figma", role: "UX Designer, Growth", when: "Today", initials: "F", color: "#ef6c55" },
-                    { company: "Stripe", role: "Senior Product Designer", when: "Tomorrow", initials: "S", color: "#6258d9" },
-                  ].map((item) => <div className="followup-row" key={item.company}><span className="company-mark small-mark" style={{ backgroundColor: item.color }}>{item.initials}</span><span className="followup-copy"><strong>{item.company}</strong><small>{item.role}</small></span><span className={`followup-when ${item.when === "Today" ? "today" : ""}`}>{item.when}</span></div>)}
-                  <Button variant="outline" className="followup-cta" onClick={() => setDialog("assistant")}><Sparkles size={15} /> Draft a follow-up <ArrowRight size={14} /></Button>
-                </CardContent>
-              </Card>
-
-              <Card className="panel email-panel" id="email-activity">
-                <CardHeader className="panel-heading compact-heading"><div><CardTitle>Recent email activity</CardTitle><p>{gmailEmail ? `${gmailTracked} relevant messages tracked` : "Demo email activity · not synced"}</p></div><button className="icon-subtle" aria-label="Connect email" onClick={() => setDialog("gmail")}><Mail size={16} /></button></CardHeader>
-                <CardContent className="email-list">
-                  {gmailEmail ? gmailMessages.slice(0, 3).map((message) => <GmailEmailRow key={message.id} message={message} onOpen={() => void openGmailMessage(message)} onFollowUp={() => startFollowUp(message)} />) : recentEmails.map((email) => <div className="email-row" key={email.subject}><span className="email-mark" style={{ backgroundColor: email.color }}>{email.company.slice(0, 1)}</span><div className="email-copy"><div><strong>{email.company}</strong><time>{email.time}</time></div><p>{email.subject}</p><Badge className="email-kind">{email.kind}</Badge></div></div>)}
-                  {gmailEmail && gmailMessages.length === 0 && <p className="email-empty">No job-related emails found yet. Use Sync Gmail to check again.</p>}
-                  {gmailEmail && gmailMessages.length > 3 ? <button className="connect-email-link" onClick={() => setDialog("mail-list")}>View all {gmailMessages.length} job emails <ArrowRight size={14} /></button> : <button className="connect-email-link" onClick={() => setDialog("gmail")}>{gmailEmail ? `Connected as ${gmailEmail}` : "Connect Gmail with Google OAuth"} <ArrowRight size={14} /></button>}
-                </CardContent>
-              </Card>
-            </div>
           </section>
 
           <footer className="page-footer"><span>Made for the next step in your career.</span><span><span className="footer-dot" /> {gmailEmail ? "Gmail connected · detected roles shown" : "Demo mode · no account connected"}</span></footer>
